@@ -1,0 +1,210 @@
+---
+title: "Guide to describing dog walks and measuring potential disturbance to ground nesting birds"
+author: "Sarah Papworth"
+date: "01 July 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background and updates
+
+This code accompanies the paper **'Dog walking in UK lowland heathlands reduces available habitat for ground nesting birds: implications and applications for other protected areas'**, showing how the analysis can be reproduced. The example datafile can be downloaded from: 
+[https://github.com/SarahPapworth/dogwalkinganalysis](https://github.com/SarahPapworth/dogwalkinganalysis). Any updates to this code will also be listed on Github.
+
+## Creating a datafile to use this code
+
+To create a datafile suitable for use with this code in R, each row in the dataset should be a single location of an individual from a GPS tracker. The columns needed for the analysis below are:
+
+```{r table, echo=F}
+library(knitr)
+table<-read.csv(file.choose(),header=T)#load Required data.csv
+kable(table,col.names = gsub("[.]", " ", names(table)))
+```
+
+
+Make sure the data are in the file in chronological order within each individual, with the earliest locations first. The example datafile is saved as a comma delimited csv file. If you wish to use the code below on your own data, the easiest way to do so is to also save your dataset as a comma delimited csv file, and use the same column headings. Below you can see what the example data looks like.
+
+## Required packages and loading the data
+
+Load the necessary packages for the analysis in R, then load and view the data. 
+```{r packages,message=FALSE,warning=FALSE}
+library(sp)
+library(spacetime)
+library(trajectories)
+library(raster)
+
+walks<-read.csv(file.choose(),header=T)
+head(walks)
+```
+
+
+## Data management
+
+**Step 1:** As the data were recorded by the GPS trackers using WGS84, the first step is to convert them to British National Grid (or your chosen local reference system), so that the results are reported in metres, rather than decimal degrees. After running the code below, you should see two new variables (`BNGlat` and `BNGlong`) which show each GPS location using British National Grid coordinates in the 'walks' dataset. If you have collected data outside of Britain, then you should choose an appropriate projection for your location, editing the last 5 lines of the code below as needed.
+
+```{r GPS conversion}
+#First create a data frame with the spatial coordinates from the datafile, 
+LatLong<-data.frame( X = walks$Latitude, Y = walks$Longitude)
+names(LatLong) <- c("X","Y")
+coordinates(LatLong) <- ~ X + Y 
+#Tell R that they are recorded with the WGS84 coordinate system.
+proj4string(LatLong) <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84")
+#Now convert data from WGS to British National Grid (BNG) in a new data frame, 'BNG'.
+bng = "+init=epsg:27700"
+BNG <- spTransform(LatLong, CRS(bng))
+#Add the converted coordinates to the original 'walks' dataset.
+walks$BNGlat<-BNG@coords[,2]
+walks$BNGlong<-BNG@coords[,1]
+head(walks)
+```
+
+**Step 2:** The next step is to create a composite date and time variable. After running the code below, you should see a new variable called 'datetime' with the date and time in the 'walks' dataset.
+```{r datetime}
+#The "GMT" at the end specifies the time was measured in 'Greenwich mean time' - you can change to your local time zone as appropriate.
+walks$datetime <- as.POSIXct(paste(walks$Date,walks$Time), format = "%d/%m/%Y %H:%M:%S","GMT")
+head(walks)
+```
+
+
+
+## Calculating descriptive statistics of dog and owner routes
+
+The code below will calculate descriptive statistics for each human-dog pair. Just alter the first line of code (change 1 in `pair<-walks[walks$Walk==1,]` to the number of the walk / pair you wish to analyse) to specify which pair you wish to calculate the statistics for.
+
+**Step 3:** Create three new datasets - one with the data for the pair, one with just the human data, and one with just the dog data. You also need to calculate the trajectory of the human and the dog. Once created, you should see these datasets in the Environment window in RStudio. Substitute '1' in the first line for other walks as appropriate. In the example dataset, there are four pairs, labelled 1 to 4. The code below creates the datasets to analyse pair 1.
+```{r more}
+pair<-walks[walks$Walk==1,]
+#Create a separate dataset for the human in the pair.
+human<-pair[pair$Species=="human",]
+#Repeat for the dog. 
+dog<-pair[pair$Species=="dog",]
+```
+
+**Step 4:** Extracting information about the human's track - maximum distance walked. The first step is to add a column to the `human` dataset which calculates the distance between the walk starting point (assumed to be the first GPS point in the file) and all subsequent points. The column here is called `distancetraveled`. The maximum value in this column is then the maximum Euclidean distance travelled by the human, measured in metres, as the calculations are based on BNG.
+```{r human}
+human$distancetraveled<-sqrt(((human$BNGlong-human$BNGlong[1])^2)+((human$BNGlat-human$BNGlat[1])^2))
+max(human$distancetraveled)    
+```
+So the human walked a maximum of `r round(max(human$distancetraveled))`m from the start of the walk.
+
+**Step 5:** Create a trajectory of the human's path, then calculate the humans total distance walked, and time spent walking from the human trajectory (`humantrajectory`).
+```{r human traj}
+#Create a trajectory of where they went:
+humantrajectory<-Track(STIDF(SpatialPoints(cbind(human$BNGlong,human$BNGlat),CRS(bng)),human$datetime,human["distancetraveled"]))
+#Total distance travelled by the human (in metres):
+TrackSummary(humantrajectory)$distance
+#Time spent walking by the human (in minutes):
+sum(humantrajectory@connections$duration)/60
+```
+So the human walked a total of `r round(TrackSummary(humantrajectory)$distance)`m over `r round(sum(humantrajectory@connections$duration)/60)` minutes.
+
+**Step 6:** Repeat steps 4 and 5 for the dog data.
+```{r dog rep}
+dog$distancetraveled<-sqrt(((dog$BNGlong-dog$BNGlong[1])^2)+((dog$BNGlat-dog$BNGlat[1])^2))
+max(dog$distancetraveled)    
+dogtrajectory<-Track(STIDF(SpatialPoints(cbind(dog$BNGlong,dog$BNGlat),CRS(bng)),dog$datetime,dog["distancetraveled"]))
+TrackSummary(dogtrajectory)$distance
+sum(dogtrajectory@connections$duration)/60
+```
+So the dog went a maximum of `r round(max(dog$distancetraveled))`m from the start of the walk, they went a total of `r round(TrackSummary(dogtrajectory)$distance)`m over `r round(sum(dogtrajectory@connections$duration)/60)` minutes.
+
+**Step 7:** It's possible to compare the dog and human trajectories and calculate the distance between the two at each timepoint. To do this, create a new dataset called `difftrack`. It's possible to plot these differences using the plot function. You can also extract the distance between the dog and human at each timepoint and save as a new variable: `distancebetween`.
+```{r compare}
+difftrack<-compare(humantrajectory,dogtrajectory)
+distancebetween<-difftrack@conns2$dists
+#The first trajectory in 'difftrack' is plotted red, and the second blue. So in this example, the human is in red, and the dog in blue, with black lines linking points recorded at the same time.
+plot(difftrack)
+#Each trajectory can also be plotted separately using e.g. 
+plot(humantrajectory)
+#The median difference between the dog and human (in metres) can be calculated:
+median(distancebetween)  
+```
+So the median distance between the human and the dog in this walk was `r round(median(distancebetween))`m.
+
+You can then repeat these steps with the next pair in the analysis. It is possible to create a loop to automate the analysis above so it runs through each pair within your dataset in turn. We have not shared this here, as this pair-by-pair approach also allows you to manually inspect the data as you go. If you wish to save the extracted values above to a new dataset with one line for each pair, then you first need to create the new dataset.
+
+```{r new}
+Calculated<- data.frame(Walk=numeric(0),
+                  Date=character(0),
+                  Time=character(0),
+                  maxhumandistance=numeric(0),
+                  maxdogdistance=numeric(0),
+                  humandistancetravelled=numeric(0),
+                  dogdistancetravelled=numeric(0),
+                  humanwalkduration=numeric(0),
+                  dogwalkduration=numeric(0),
+                  mediandistancebetween=numeric(0))
+```
+
+Then, each time you run through the code above with a new pair, append the calculations to this new data.frame using the code below.
+
+```{r append}
+Calculated[nrow(Calculated) + 1,] = c(pair$Walk[1], pair$Date[1], pair$Time[1],max(human$distancetraveled),max(dog$distancetraveled),TrackSummary(humantrajectory)$distance,TrackSummary(dogtrajectory)$distance,(sum(humantrajectory@connections$duration)/60),(sum(dogtrajectory@connections$duration)/60),median(distancebetween) )
+head(Calculated)
+```
+
+## Calculating the area where walks will disturb ground nesting birds
+**Step 8:** This analysis is on the whole dataset, rather than each walk separately. First, you need to do some conversion on the `walks` dataset you loaded above, changing it into a SpatialPointsDataframe, then splitting by each walk before converting each walk to a separate line, then combining with the dataset so you have identifying information.
+```{r maps}
+#change the 'walks' dataset into a SpatialPointsDataframe
+spdf=SpatialPointsDataFrame(BNG,walks)
+#Now split the dataframe by walk
+x <- lapply(split(spdf, spdf$Walk), function(x) Lines(list(Line(coordinates(x))), x$Walk[1L]))
+#Convert to spatial lines, with one for each walk
+lines <- SpatialLines(x)
+#Add the data to each to each of the spatial lines
+data <- data.frame(Walk=unique(spdf$Walk))
+rownames(data) <- data$ID
+sp_line_walk <- SpatialLinesDataFrame(lines, data)
+```
+The code above creates a SpatialLinesDataFrame with data from both humans and dogs. If you wanted to make the use of space by walks were dogs are on leads, you would have run the above code just for the locations of humans, and then below add lead length to the size of buffer (equal to flight initation distance) you wish to add. 
+
+**Step 9:** To calculate the area disturbed, you create a SpatialPolygon with a buffer around each walk, to represent the area within which ground nesting birds would be flushed. The width of the buffer is the flight initiation distance for the birds in metres. Here we'll add a buffer of 8.5m. 'dissolve=TRUE' combines all the tracks, and so calculates the area which is disturbed at least once. 'dissolve=FALSE' does not combine tracks, so can be used to calculate the number of walks which disturb each area. Here we use dissolve=TRUE to calculate the total area disturbed by walks.
+```{r disturbance}
+#Create the buffer
+buffermedianFID<-raster::buffer(sp_line_walk,width=8.5,dissolve=TRUE)
+#Calculate the area disturbed by walks in kilometres squared.
+raster::area(buffermedianFID)/ 1000000
+#You can also view the SpatialPolygon
+plot(buffermedianFID)
+```
+
+So the total area disturbed by walks in this dataset, for birds with a flight initiation distance of 8.5m, was `r round(raster::area(buffermedianFID)/ 1000000,2)`km^2^.
+
+
+**Step 10:** We might want instead to know how many walks disturb each part of the landscape, so let's run that code again using 'dissolve=FALSE'. Once we've done that, we need to create a raster, and here we choose it to have a 1m^2^ resolution. The `rasterize` function will count how many of the polygons in `bufferNo.walks` in found in each 1m^2^ of the raster you created. 
+```{r mapping disturbance}
+bufferNo.walks<-raster::buffer(sp_line_walk,width=8.5,dissolve=FALSE)
+#create an empty raster with the same extent as the SpatialPolygonsDataFrame
+r<-raster(bufferNo.walks)
+#set the resolution for the raster - here set as 1m2
+res(r)<-1
+#Now 'count' the number of polygons in 'bufferNo.walks' which overlay each raster cell
+rich <- rasterize(bufferNo.walks, r, field=1,fun='count')
+#Step 2: Now we can summarize how many walks disturbed each metre squared.
+summary(as.factor(rich@data@values[!is.na(rich@data@values)]))
+```
+So `r summary(as.factor(rich@data@values[!is.na(rich@data@values)]))[1]` metres squared were within 8.5m of a single walk, and `r summary(as.factor(rich@data@values[!is.na(rich@data@values)]))[2]` were within 8.5m of two walks. You might prefer to view this as a graph, particularly if you have a lot more walks. Let's look at how many walks disturbed the area using kilometres squared rather than metres squared.
+```{r plot data}
+#Dividing the raw value by 1,000,000 gives kilometres squared.
+plot(summary(as.factor(rich@data@values[!is.na(rich@data@values)]))/1000000,ylab="Area (km2)",xlab="No walks which disturbed the location")
+```
+
+**Step 11:** Finally, you might wish to view this data as a map, rather than extracting the data for a graph. The simplest way to do this is to plot the raster using the plot function (`plot(rich)`), but let's make it a little more attractive by adding a legend and scalebar.
+```{r map}
+plot(rich,breaks=c(0,1.5,2.5),col=c("midnightblue","cornflowerblue","indianred4"),legend=FALSE)
+legend("topright",legend=c("1 walk","2 walks","3 walks"),fill=c("midnightblue","cornflowerblue","indianred4"),bty="n")
+scalebar(1000,xy=c(495800,163200),type="bar",divs=4,below="metres")
+```
+
+You can save this plot as you would save any other in R, but you can also save the raster itself for use by other software. The code below will save the raster to your working directory.
+
+```{r saveraster,eval=F}
+
+writeRaster(rich,"output raster.tif", format="GTiff")
+```
+
+
