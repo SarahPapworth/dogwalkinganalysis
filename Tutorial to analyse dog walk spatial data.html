@@ -11,7 +11,7 @@
 
 <meta name="author" content="Sarah Papworth" />
 
-<meta name="date" content="2022-07-01" />
+<meta name="date" content="2023-08-29" />
 
 <title>Guide to describing dog walks and measuring potential disturbance to ground nesting birds</title>
 
@@ -359,7 +359,7 @@ pre code {
 <h1 class="title toc-ignore">Guide to describing dog walks and measuring
 potential disturbance to ground nesting birds</h1>
 <h4 class="author">Sarah Papworth</h4>
-<h4 class="date">01 July 2022</h4>
+<h4 class="date">29 August 2023</h4>
 
 </div>
 
@@ -443,7 +443,7 @@ you can see what the example data looks like.</p>
 <h2>Required packages and loading the data</h2>
 <p>Load the necessary packages for the analysis in R, then load and view
 the data.</p>
-<pre class="r"><code>library(sp)
+<pre class="r"><code>library(sf)
 library(spacetime)
 library(trajectories)
 library(raster)
@@ -514,6 +514,18 @@ head(walks)</code></pre>
 </div>
 <div id="calculating-descriptive-statistics-of-dog-and-owner-routes" class="section level2">
 <h2>Calculating descriptive statistics of dog and owner routes</h2>
+<p>First, let’s create a new dataset where you can save the values you
+calculate below.</p>
+<pre class="r"><code>Calculated&lt;- data.frame(Walk=numeric(0),
+                  Date=character(0),
+                  Time=character(0),
+                  maxhumandistance=numeric(0),
+                  maxdogdistance=numeric(0),
+                  humandistancetravelled=numeric(0),
+                  dogdistancetravelled=numeric(0),
+                  humanwalkduration=numeric(0),
+                  dogwalkduration=numeric(0),
+                  mediandistancebetween=numeric(0))</code></pre>
 <p>The code below will calculate descriptive statistics for each
 human-dog pair. Just alter the first line of code (change 1 in
 <code>pair&lt;-walks[walks$Walk==1,]</code> to the number of the walk /
@@ -587,25 +599,8 @@ median(distancebetween)  </code></pre>
 <pre><code>## [1] 118.9186</code></pre>
 <p>So the median distance between the human and the dog in this walk was
 119m.</p>
-<p>You can then repeat these steps with the next pair in the analysis.
-It is possible to create a loop to automate the analysis above so it
-runs through each pair within your dataset in turn. We have not shared
-this here, as this pair-by-pair approach also allows you to manually
-inspect the data as you go. If you wish to save the extracted values
-above to a new dataset with one line for each pair, then you first need
-to create the new dataset.</p>
-<pre class="r"><code>Calculated&lt;- data.frame(Walk=numeric(0),
-                  Date=character(0),
-                  Time=character(0),
-                  maxhumandistance=numeric(0),
-                  maxdogdistance=numeric(0),
-                  humandistancetravelled=numeric(0),
-                  dogdistancetravelled=numeric(0),
-                  humanwalkduration=numeric(0),
-                  dogwalkduration=numeric(0),
-                  mediandistancebetween=numeric(0))</code></pre>
-<p>Then, each time you run through the code above with a new pair,
-append the calculations to this new data.frame using the code below.</p>
+<p>Now, use the code below to add these calculations to your
+<code>Calculated</code> data.frame.</p>
 <pre class="r"><code>Calculated[nrow(Calculated) + 1,] = c(pair$Walk[1], pair$Date[1], pair$Time[1],max(human$distancetraveled),max(dog$distancetraveled),TrackSummary(humantrajectory)$distance,TrackSummary(dogtrajectory)$distance,(sum(humantrajectory@connections$duration)/60),(sum(dogtrajectory@connections$duration)/60),median(distancebetween) )
 head(Calculated)</code></pre>
 <pre><code>##   Walk       Date      Time maxhumandistance   maxdogdistance
@@ -614,6 +609,11 @@ head(Calculated)</code></pre>
 ## 1       5407.47710303223     5915.77160342155  43.4666666666667           43.25
 ##   mediandistancebetween
 ## 1      118.918573354285</code></pre>
+<p>You can then repeat these steps with the next pair in the analysis.
+It is possible to create a loop to automate the analysis above so it
+automatically runs through each pair within your dataset in turn. We
+have not shared this here, as this pair-by-pair approach also allows you
+to manually inspect the data as you go.</p>
 </div>
 <div id="calculating-the-area-where-walks-will-disturb-ground-nesting-birds" class="section level2">
 <h2>Calculating the area where walks will disturb ground nesting
@@ -635,7 +635,7 @@ data &lt;- data.frame(Walk=unique(spdf$Walk))
 rownames(data) &lt;- data$ID
 sp_line_walk &lt;- SpatialLinesDataFrame(lines, data)</code></pre>
 <p>The code above creates a SpatialLinesDataFrame with data from both
-humans and dogs. If you wanted to make the use of space by walks were
+humans and dogs. If you wanted to make the use of space by walks where
 dogs are on leads, you would have run the above code just for the
 locations of humans, and then below add lead length to the size of
 buffer (equal to flight initation distance) you wish to add.</p>

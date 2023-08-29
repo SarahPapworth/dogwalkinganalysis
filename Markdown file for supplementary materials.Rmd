@@ -1,7 +1,7 @@
 ---
 title: "Guide to describing dog walks and measuring potential disturbance to ground nesting birds"
 author: "Sarah Papworth"
-date: "01 July 2022"
+date: "29 August 2023"
 output: html_document
 ---
 
@@ -31,7 +31,7 @@ Make sure the data are in the file in chronological order within each individual
 
 Load the necessary packages for the analysis in R, then load and view the data. 
 ```{r packages,message=FALSE,warning=FALSE}
-library(sp)
+library(sf)
 library(spacetime)
 library(trajectories)
 library(raster)
@@ -71,6 +71,21 @@ head(walks)
 
 
 ## Calculating descriptive statistics of dog and owner routes
+
+First, let's create a new dataset where you can save the values you calculate below.
+
+```{r new}
+Calculated<- data.frame(Walk=numeric(0),
+                  Date=character(0),
+                  Time=character(0),
+                  maxhumandistance=numeric(0),
+                  maxdogdistance=numeric(0),
+                  humandistancetravelled=numeric(0),
+                  dogdistancetravelled=numeric(0),
+                  humanwalkduration=numeric(0),
+                  dogwalkduration=numeric(0),
+                  mediandistancebetween=numeric(0))
+```
 
 The code below will calculate descriptive statistics for each human-dog pair. Just alter the first line of code (change 1 in `pair<-walks[walks$Walk==1,]` to the number of the walk / pair you wish to analyse) to specify which pair you wish to calculate the statistics for.
 
@@ -124,27 +139,13 @@ median(distancebetween)
 ```
 So the median distance between the human and the dog in this walk was `r round(median(distancebetween))`m.
 
-You can then repeat these steps with the next pair in the analysis. It is possible to create a loop to automate the analysis above so it runs through each pair within your dataset in turn. We have not shared this here, as this pair-by-pair approach also allows you to manually inspect the data as you go. If you wish to save the extracted values above to a new dataset with one line for each pair, then you first need to create the new dataset.
-
-```{r new}
-Calculated<- data.frame(Walk=numeric(0),
-                  Date=character(0),
-                  Time=character(0),
-                  maxhumandistance=numeric(0),
-                  maxdogdistance=numeric(0),
-                  humandistancetravelled=numeric(0),
-                  dogdistancetravelled=numeric(0),
-                  humanwalkduration=numeric(0),
-                  dogwalkduration=numeric(0),
-                  mediandistancebetween=numeric(0))
-```
-
-Then, each time you run through the code above with a new pair, append the calculations to this new data.frame using the code below.
+Now, use the code below to add these calculations to your `Calculated` data.frame.
 
 ```{r append}
 Calculated[nrow(Calculated) + 1,] = c(pair$Walk[1], pair$Date[1], pair$Time[1],max(human$distancetraveled),max(dog$distancetraveled),TrackSummary(humantrajectory)$distance,TrackSummary(dogtrajectory)$distance,(sum(humantrajectory@connections$duration)/60),(sum(dogtrajectory@connections$duration)/60),median(distancebetween) )
 head(Calculated)
 ```
+You can then repeat these steps with the next pair in the analysis. It is possible to create a loop to automate the analysis above so it automatically runs through each pair within your dataset in turn. We have not shared this here, as this pair-by-pair approach also allows you to manually inspect the data as you go. 
 
 ## Calculating the area where walks will disturb ground nesting birds
 **Step 8:** This analysis is on the whole dataset, rather than each walk separately. First, you need to do some conversion on the `walks` dataset you loaded above, changing it into a SpatialPointsDataframe, then splitting by each walk before converting each walk to a separate line, then combining with the dataset so you have identifying information.
@@ -160,7 +161,7 @@ data <- data.frame(Walk=unique(spdf$Walk))
 rownames(data) <- data$ID
 sp_line_walk <- SpatialLinesDataFrame(lines, data)
 ```
-The code above creates a SpatialLinesDataFrame with data from both humans and dogs. If you wanted to make the use of space by walks were dogs are on leads, you would have run the above code just for the locations of humans, and then below add lead length to the size of buffer (equal to flight initation distance) you wish to add. 
+The code above creates a SpatialLinesDataFrame with data from both humans and dogs. If you wanted to make the use of space by walks where dogs are on leads, you would have run the above code just for the locations of humans, and then below add lead length to the size of buffer (equal to flight initation distance) you wish to add. 
 
 **Step 9:** To calculate the area disturbed, you create a SpatialPolygon with a buffer around each walk, to represent the area within which ground nesting birds would be flushed. The width of the buffer is the flight initiation distance for the birds in metres. Here we'll add a buffer of 8.5m. 'dissolve=TRUE' combines all the tracks, and so calculates the area which is disturbed at least once. 'dissolve=FALSE' does not combine tracks, so can be used to calculate the number of walks which disturb each area. Here we use dissolve=TRUE to calculate the total area disturbed by walks.
 ```{r disturbance}
